@@ -75,6 +75,26 @@ conclusion = 3
 print_rule(premise, conclusion, support, confidence, features)
 
 
+"""
+我们对所有的规则的支持度进行一个排序，从大到小排序，找出支持度最大的那一条规则。\ 
+字典排序使用itemgetter()类。
+"""
+# items()返回字典所有元素的列表，item getter（1）表示以字典元素的值作为排序依据，reverse = True表示降序
+sorted_support = sorted(support.items(), key = itemgetter(1), reverse = True)
+print(sorted_support)
+
+for index in range(5):    #输出支持度的排序前五个。
+    print("Rule #{0}".format(index + 1))
+    premise, conclusion = sorted_support[index][0]
+    print_rule(premise, conclusion, support, confidence, features)
+
+sorted_confidence = sorted(confidence.items(), key = itemgetter(1), reverse = True)
+print(sorted_confidence)
+for index in range(5): #    输出置信度排序前五个
+    print("Rule #{0}".format(index + 1))
+    premise, conclusion = sorted_confidence[index][0]
+    print_rule(premise, conclusion, support, confidence, features)
+
 
 
 
