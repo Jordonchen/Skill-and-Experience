@@ -99,7 +99,11 @@ y_predicted = predict(X_test, model)
 print(y_predicted)
 print(y_test)
 # 比较预测结果与实际的测试集类别，得出正确率。
+<<<<<<< HEAD
 accuracy = np.mean(y_predicted == y_test) * 100   #作用是返回括号内条件成立的占比
+=======
+accuracy = np.mean(y_predicted == y_test) * 100
+>>>>>>> 0e50ff1cb5124ca441ef3b9947af5917187246c2
 print("The test accuracy is {:.1f}%".format(accuracy))
 
 """
