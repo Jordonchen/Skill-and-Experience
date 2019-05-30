@@ -1,0 +1,160 @@
+本文档主要介绍openstack和opendaylight集成环境的部署，该环境是利用devstack来自动化部署，最终能够通过opendaylight来管理网络资源，实现网络服务功能。
+
+
+（1）系统：ubuntu16.04 LTS
+（2）openstack版本：queens
+
+
+1、pip换源
+
+$ sudo apt-get install python-pip -y
+$ mkdir ~/.pip
+$ vim ~/.pip/pip.conf
+[global]
+index-url = http://pypi.douban.com/simple/
+trusted-host = pypi.douban.com
+
+
+2、下载devstack，创建stack用户，并设置权限
+$ sudo useradd -s /bin/bash -d /opt/stack -m stack
+$ echo "stack ALL=(ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/stack
+$ sudo su - stack
+
+$ git clone https://git.openstack.org/openstack-dev/devstack -b stable/queens
+$ cd devstack
+$ vim local.conf
+[[local|localrc]]
+# This will fetch the latest ODL snapshot
+ODL_RELEASE=latest-snapshot
+NEUTRON_CREATE_INITIAL_NETWORKS=False
+# Default is V2 driver, uncomment below line to use V1
+#ODL_V2DRIVER=False
+# Default is psuedo-port-binding-controller
+#ODL_PORT_BINDING_CONTROLLER=
+
+# Set here which ODL openstack service provider to use
+# These are core ODL features
+ODL_NETVIRT_KARAF_FEATURE=odl-neutron-service,odl-restconf-all,odl-aaa-authn,odl-dlux-core,odl-mdsal-apidocs
+# Set DLUX Karaf features needed for the ODL GUI at http://<ODL_IP>:8181/index.html
+ODL_NETVIRT_KARAF_FEATURE+=,odl-dluxapps-nodes,odl-dluxapps-topology,odl-dluxapps-yangui,odl-dluxapps-yangvisualizer
+# Set L2 Karaf features needed for the ODL GUI at http://<ODL_IP>:8181/index.html
+ODL_NETVIRT_KARAF_FEATURE+=,odl-l2switch-switch,odl-l2switch-switch-ui,odl-ovsdb-hwvtepsouthbound-ui,odl-ovsdb-southbound-impl-ui,odl-netvirt-ui
+# Set OpenFlow Karaf features needed for the ODL GUI at http://<ODL_IP>:8181/index.html
+ODL_NETVIRT_KARAF_FEATURE+=,odl-openflowplugin-flow-services-ui
+# odl-netvirt-openstack is used for new netvirt
+ODL_NETVIRT_KARAF_FEATURE+=,odl-netvirt-openstack
+# optional feature neutron-logger to log changes of neutron yang models
+ODL_NETVIRT_KARAF_FEATURE+=,odl-neutron-logger
+# Switch to using the ODL's L3 implementation
+ODL_L3=True
+# Set Host IP here. It is externally reachable network, set
+# below param to use ip from a different network
+HOST_IP=$(ip route get 8.8.8.8 | awk '{print $NF; exit}')
+# public network connectivity
+Q_USE_PUBLIC_VETH=True
+Q_PUBLIC_VETH_EX=veth-pub-ex
+Q_PUBLIC_VETH_INT=veth-pub-int
+ODL_PROVIDER_MAPPINGS=public:${Q_PUBLIC_VETH_INT}
+# Enable debug logs for odl ovsdb
+ODL_NETVIRT_DEBUG_LOGS=True
+#Q_USE_DEBUG_COMMAND=True
+DEST=/opt/stack/
+# move DATA_DIR outside of DEST to keep DEST a bit cleaner
+DATA_DIR=/opt/stack/data
+ADMIN_PASSWORD=password
+MYSQL_PASSWORD=${ADMIN_PASSWORD}
+RABBIT_PASSWORD=${ADMIN_PASSWORD}
+SERVICE_PASSWORD=${ADMIN_PASSWORD}
+SERVICE_TOKEN=supersecrettoken
+enable_service dstat
+enable_service g-api
+enable_service g-reg
+enable_service key
+enable_service mysql
+enable_service n-api
+enable_service n-cond
+enable_service n-cpu
+enable_service n-crt
+enable_service n-novnc
+enable_service n-sch
+enable_service placement-api
+enable_service placement-client
+enable_service neutron-dhcp
+enable_service neutron-metadata-agent
+enable_service neutron-api
+enable_service rabbit
+enable_service tempest
+# These can be enabled if storage is needed to do
+# any feature or testing for integration
+disable_service c-api
+disable_service c-vol
+disable_service c-sch
+SKIP_EXERCISES=boot_from_volume,bundle,client-env,euca
+# Screen console logs will capture service logs.
+SYSLOG=False
+LOGFILE=/opt/stack/new/devstacklog.txt
+VERBOSE=True
+FIXED_RANGE=10.1.0.0/20
+FLOATING_RANGE=172.24.5.0/24
+PUBLIC_NETWORK_GATEWAY=172.24.5.1
+FIXED_NETWORK_SIZE=4096
+VIRT_DRIVER=libvirt
+export OS_NO_CACHE=1
+# Additional repositories need to be cloned can be added here.
+#LIBS_FROM_GIT=
+# Enable MySql Logging
+DATABASE_QUERY_LOGGING=True
+# set this until all testing platforms have libvirt >= 1.2.11
+# see bug #1501558
+EBTABLES_RACE_FIX=True
+enable_plugin networking-odl https://git.openstack.org/openstack/networking-odl
+
+
+4、安装
+
+$ ./stack
+
+5、.验证环境
+（1）检查Open vSwitch (virtual layer-2 switch)是否 正在被监听，通过ports 6640and6653端口：
+$ sudo ovs-vsctl show | grep '6640\|6653'
+
+（2）检查opendaylight进程正在执行“
+$ ps aux | grep opendaylight
+
+（3）检查OVS的配置和接口mapping
+$ sudo ovs-vsctl get Open_vSwitch . other_config
+输出结果：{local_ip="192.168.0.10", provider_mappings="public:veth-pub-int"}
+
+（4）在neutron的配置文件中查看opendaylight是否是service plugin，
+path： /etc/neutron/neutron.conf.
+$ grep -i odl /etc/neutron/neutron.conf
+输出结果：service_plugins = odl-router_v2
+（5）查看ml2 的配置文件是否有opendaylight的配置：
+path：/etc/neutron/plugins/ml2/ml2_conf.ini
+$ grep -i 'opend\|odl\|8087' /etc/neutron/plugins/ml2/ml2_conf.ini
+
+（6）检查neutron-agent是否正常工作 $ neutron agent-list
+
+（7）检查弄否登陆opendaylight命令行环境
+$ /opt/stack/opendaylight/distribution-karaf-0.7.0-SNAPSHOT/bin/client
+
+5、构建网络拓扑
+
+查看ovs
+$ sudo ovs-vsctl show
+
+
+查看br-int网桥上的openflow流表项
+$ sudo ovs-ofctl --protocol=OpenFlow13 dump-flows br-int
+
+
+由配置文件或者通过以下命令，可知openstack外网的绑定的网桥是
+provider_mappings="public:veth-pub-int"
+
+
+本环境在devstack部署环境下，没有在veth-pub-int和物理网卡之间做地址转换，所以需要手动配置iptables nat规则：
+$ sudo iptables -t nat -A POSTROUTING -s 172.24.5.0/24 -o eth0 -j MASQUERADE
+PS：172.24.5.0/24：veth-pub-int 的IP地址，eth0为宿主机的物理网卡
+
+
+
